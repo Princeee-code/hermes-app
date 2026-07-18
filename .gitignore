@@ -1,0 +1,11 @@
+# Binaries
+backend/bin/
+**/*.apk
+**/*.keystore
+apk-build/
+**/build/
+**/.gradle/
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/logs/
