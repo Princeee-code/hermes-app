@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package hermes;
+option go_package = "github.com/prince/hermes-backend/internal/api/grpc/pb";
+
+// ─────────────────────────────────────────
+// Chat Service — proxies to OmniRoute LLM
+// ─────────────────────────────────────────
+service ChatService {
+  // Send a message and receive the AI response
+  rpc Chat(ChatRequest) returns (ChatResponse);
+
+  // Stream a conversation (messages arrive as generated)
+  rpc ChatStream(ChatRequest) returns (stream ChatStreamChunk);
+}
+
+message ChatRequest {
+  string message = 1;
+  string session_id = 2;           // optional conversation thread
+  string model = 3;                // e.g. "opencode/oc-deepseek-v4-flash-free"
+  repeated ChatMessage history = 4; // prior conversation context
+}
+
+message ChatMessage {
+  string role = 1;    // "user" | "assistant" | "system"
+  string content = 2;
+}
+
+message ChatResponse {
+  string reply = 1;
+  string model_used = 2;
+  int64 tokens_used = 3;
+  double latency_ms = 4;
+}
+
+message ChatStreamChunk {
+  string content = 1;
+  bool done = 2;
+  string model_used = 3;
+}
+
+// ─────────────────────────────────────────
+// Memory Service — Hindsight interface
+// ─────────────────────────────────────────
+service MemoryService {
+  rpc Recall(RecallRequest) returns (RecallResponse);
+  rpc Retain(RetainRequest) returns (RetainResponse);
+  rpc Reflect(ReflectRequest) returns (ReflectResponse);
+}
+
+message RecallRequest {
+  string query = 1;
+  int32 limit = 2;
+}
+
+message RecallResult {
+  string content = 1;
+  double relevance = 2;
+  string timestamp = 3;
+  repeated string tags = 4;
+}
+
+message RecallResponse {
+  repeated RecallResult results = 1;
+}
+
+message RetainRequest {
+  string content = 1;
+  string context = 2;
+  repeated string tags = 3;
+}
+
+message RetainResponse {
+  bool success = 1;
+  string id = 2;
+}
+
+message ReflectRequest {
+  string query = 1;
+}
+
+message ReflectResponse {
+  string synthesis = 1;
+  repeated string sources = 2;
+}
+
+// ─────────────────────────────────────────
+// System Service — device status
+// ─────────────────────────────────────────
+service SystemService {
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+  rpc GetServices(ServicesRequest) returns (ServicesResponse);
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  CpuInfo cpu = 1;
+  MemoryInfo memory = 2;
+  StorageInfo storage = 3;
+  string uptime = 4;
+  string kernel = 5;
+}
+
+message CpuInfo {
+  string model = 1;
+  int32 cores = 2;
+  string governor = 3;
+  double load_1m = 4;
+  double load_5m = 5;
+  double load_15m = 6;
+}
+
+message MemoryInfo {
+  int64 total_kb = 1;
+  int64 free_kb = 2;
+  int64 available_kb = 3;
+  int64 swap_total_kb = 4;
+  int64 swap_used_kb = 5;
+}
+
+message StorageInfo {
+  int64 total_bytes = 1;
+  int64 free_bytes = 2;
+  string mount = 3;
+}
+
+message ServicesRequest {}
+
+message ServiceInfo {
+  string name = 1;
+  string status = 2;  // "running" | "stopped" | "error"
+  int32 pid = 3;
+  string endpoint = 4;
+}
+
+message ServicesResponse {
+  repeated ServiceInfo services = 1;
+}
+
+// ─────────────────────────────────────────
+// Terminal Service — command execution
+// ─────────────────────────────────────────
+service TerminalService {
+  // Execute a command and get output back
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+
+  // Execute with streaming output (long-running commands)
+  rpc ExecuteStream(ExecuteRequest) returns (stream ExecuteChunk);
+}
+
+message ExecuteRequest {
+  string command = 1;
+  string workdir = 2;
+  int32 timeout_sec = 3;
+  bool background = 4;
+}
+
+message ExecuteResponse {
+  string stdout = 1;
+  string stderr = 2;
+  int32 exit_code = 3;
+  int32 pid = 4;
+  double duration_ms = 5;
+}
+
+message ExecuteChunk {
+  oneof data {
+    string stdout_line = 1;
+    string stderr_line = 2;
+  }
+  bool done = 3;
+  int32 exit_code = 4;
+}
