@@ -101,7 +101,7 @@ class ServiceStatus {
 }
 
 class SystemService {
-  static const String _baseUrl = 'http://127.0.0.1:9091';
+  static const String _baseUrl = 'http://127.0.0.1:9090';
 
   final http.Client _client;
 
