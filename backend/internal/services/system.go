@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -44,45 +46,56 @@ func getCPUInfo() *pb.CpuInfo {
 	info := &pb.CpuInfo{}
 
 	// Count cores (only cpuN directories where N is a digit)
-	entries, _ := os.ReadDir("/sys/devices/system/cpu/")
-	for _, e := range entries {
-		name := e.Name()
-		if len(name) > 3 && name[:3] == "cpu" {
-			// Check remaining chars are all digits
-			isCore := true
-			for _, c := range name[3:] {
-				if c < '0' || c > '9' {
-					isCore = false
-					break
+	entries, err := os.ReadDir("/sys/devices/system/cpu/")
+	if err != nil {
+		log.Printf("[services] getCPUInfo: read cpu dir: %v", err)
+	} else {
+		for _, e := range entries {
+			name := e.Name()
+			if len(name) > 3 && name[:3] == "cpu" {
+				isCore := true
+				for _, c := range name[3:] {
+					if c < '0' || c > '9' {
+						isCore = false
+						break
+					}
 				}
-			}
-			if isCore {
-				info.Cores++
+				if isCore {
+					info.Cores++
+				}
 			}
 		}
 	}
 
 	// Read model from /proc/cpuinfo
-	data, _ := os.ReadFile("/proc/cpuinfo")
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.Contains(line, "Hardware") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				info.Model = strings.TrimSpace(parts[1])
-				break
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		log.Printf("[services] getCPUInfo: read /proc/cpuinfo: %v", err)
+	} else {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Contains(line, "Hardware") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					info.Model = strings.TrimSpace(parts[1])
+					break
+				}
 			}
 		}
 	}
 
 	// Governor
-	gov, _ := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
-	if gov != nil {
+	gov, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+	if err != nil {
+		log.Printf("[services] getCPUInfo: read governor: %v", err)
+	} else {
 		info.Governor = strings.TrimSpace(string(gov))
 	}
 
 	// Load
-	load, _ := os.ReadFile("/proc/loadavg")
-	if load != nil {
+	load, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		log.Printf("[services] getCPUInfo: read /proc/loadavg: %v", err)
+	} else {
 		parts := strings.Fields(string(load))
 		if len(parts) >= 3 {
 			fmt.Sscanf(parts[0], "%f", &info.Load_1M)
@@ -96,7 +109,12 @@ func getCPUInfo() *pb.CpuInfo {
 
 func getMemoryInfo() *pb.MemoryInfo {
 	mi := &pb.MemoryInfo{}
-	data, _ := os.ReadFile("/proc/meminfo")
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		log.Printf("[services] getMemoryInfo: read /proc/meminfo: %v", err)
+		return mi
+	}
+	var swapFree int64
 	for _, line := range strings.Split(string(data), "\n") {
 		var key string
 		var val int64
@@ -112,10 +130,11 @@ func getMemoryInfo() *pb.MemoryInfo {
 			case "SwapTotal":
 				mi.SwapTotalKb = val
 			case "SwapFree":
-				mi.SwapUsedKb = mi.SwapTotalKb - val
+				swapFree = val
 			}
 		}
 	}
+	mi.SwapUsedKb = mi.SwapTotalKb - swapFree
 	return mi
 }
 
@@ -125,13 +144,16 @@ func getStorageInfo() *pb.StorageInfo {
 	if err := unix.Statfs("/data", &stat); err == nil {
 		si.TotalBytes = int64(stat.Blocks) * int64(stat.Bsize)
 		si.FreeBytes = int64(stat.Bavail) * int64(stat.Bsize)
+	} else {
+		log.Printf("[services] getStorageInfo: statfs /data: %v", err)
 	}
 	return si
 }
 
 func getUptime() string {
-	data, _ := os.ReadFile("/proc/uptime")
-	if len(data) == 0 {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		log.Printf("[services] getUptime: read /proc/uptime: %v", err)
 		return "unknown"
 	}
 	parts := strings.Fields(string(data))
@@ -148,8 +170,9 @@ func getUptime() string {
 }
 
 func getKernel() string {
-	data, _ := os.ReadFile("/proc/version")
-	if len(data) == 0 {
+	data, err := os.ReadFile("/proc/version")
+	if err != nil {
+		log.Printf("[services] getKernel: read /proc/version: %v", err)
 		return "Linux (aarch64)"
 	}
 	return strings.TrimSpace(string(data))
@@ -157,33 +180,39 @@ func getKernel() string {
 
 func checkTCP(name, addr string) *pb.ServiceInfo {
 	si := &pb.ServiceInfo{Name: name, Endpoint: addr}
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		log.Printf("[services] checkTCP(%s): dial %s: %v", name, addr, err)
+		si.Status = "stopped"
+		return si
+	}
+	conn.Close()
 	si.Status = "running"
 	return si
 }
 
 func checkProc(name, procName string) *pb.ServiceInfo {
 	si := &pb.ServiceInfo{Name: name}
-	path := "/proc/" + procName
-	if _, err := os.Stat(path); err == nil {
-		si.Status = "running"
-	} else {
-		// Search via /proc entries
-		entries, _ := os.ReadDir("/proc")
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			cmdline, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
-			if err != nil {
-				continue
-			}
-			if strings.Contains(string(cmdline), procName) {
-				si.Status = "running"
-				fmt.Sscanf(e.Name(), "%d", &si.Pid)
-				return si
-			}
-		}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		log.Printf("[services] checkProc(%s): read /proc: %v", procName, err)
 		si.Status = "stopped"
+		return si
 	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		cmdline, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(cmdline), procName) {
+			si.Status = "running"
+			fmt.Sscanf(e.Name(), "%d", &si.Pid)
+			return si
+		}
+	}
+	si.Status = "stopped"
 	return si
 }

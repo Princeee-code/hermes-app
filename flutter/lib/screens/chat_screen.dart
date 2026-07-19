@@ -2,58 +2,143 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
-import '../services/system_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/message_input.dart';
 import '../widgets/typing_indicator.dart';
-import 'conversations_screen.dart';
-import 'system_screen.dart';
+import '../main.dart';
+
+class _QuickChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppTheme.surface3.withAlpha(100),
+                AppTheme.surface2.withAlpha(80),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+            border: Border.all(
+              color: AppTheme.surface3.withAlpha(60),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: AppTheme.accentGold),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final ChatManager chatManager;
+
+  const ChatScreen({super.key, required this.chatManager});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final _chatService = ChatService();
-  final _systemService = SystemService();
   final _scrollController = ScrollController();
 
   List<ChatMessage> _messages = [];
   bool _isLoading = false;
   String _currentModel = 'gemini/gemini-2.5-flash';
   List<String> _availableModels = [];
-  StreamSubscription? _typingSub;
+  late AnimationController _orbController;
+  late AnimationController _pulseController;
+
+  final List<_QuickAction> _quickActions = const [
+    _QuickAction('Check system', Icons.monitor_heart_outlined),
+    _QuickAction('Help me plan', Icons.account_tree_outlined),
+    _QuickAction('Analyze this', Icons.analytics_outlined),
+    _QuickAction('Memory recall', Icons.memory_outlined),
+    _QuickAction('Write code', Icons.code_outlined),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _addWelcomeMessage();
+    _orbController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _loadSession();
+    widget.chatManager.addListener(_onSessionsChanged);
     _loadModels();
   }
 
-  void _addWelcomeMessage() {
-    setState(() {
-      _messages = [
-        ChatMessage.fromAssistant(
-          'Good evening, Prince. I am Hermes, your personal attendant. '
-          'How may I be of service this evening?\n\n'
-          'I have access to your system, your memory, and your AI models. '
-          'Ask me anything — I am at your disposal.',
-          model: 'Hermes v1.0',
-        ),
-      ];
+  @override
+  void didUpdateWidget(ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chatManager != widget.chatManager) {
+      oldWidget.chatManager.removeListener(_onSessionsChanged);
+      widget.chatManager.addListener(_onSessionsChanged);
+      _loadSession();
+    }
+  }
+
+  void _onSessionsChanged() {
+    if (mounted) {
+      _loadSession();
+    }
+  }
+
+  void _loadSession() {
+    _messages = List.from(widget.chatManager.activeSession.messages);
+    if (mounted) setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
     });
+  }
+
+  void _saveSession() {
+    widget.chatManager.updateSessionMessages(
+      widget.chatManager.activeIndex,
+      _messages,
+    );
   }
 
   Future<void> _loadModels() async {
     final models = await _chatService.getAvailableModels();
-    if (mounted) {
-      setState(() => _availableModels = models);
-    }
+    if (mounted) setState(() => _availableModels = models);
   }
 
   Future<void> _sendMessage(String text) async {
@@ -62,7 +147,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.add(userMsg);
       _isLoading = true;
     });
+    _saveSession();
     _scrollToBottom();
+    _pulseController.repeat(reverse: true);
 
     try {
       final history = _messages
@@ -81,16 +168,20 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages.add(reply);
           _isLoading = false;
         });
+        _saveSession();
+        _pulseController.stop();
         _scrollToBottom();
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage.fromAssistant(
-            'I apologise, Prince — I encountered an error: $e',
+            'I apologise, Prince — I encountered an error. Please try again.',
           ));
           _isLoading = false;
         });
+        _saveSession();
+        _pulseController.stop();
         _scrollToBottom();
       }
     }
@@ -101,26 +192,23 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
+          duration: const Duration(milliseconds: 400),
+          curve: AppTheme.easeOutExpo,
         );
       }
     });
   }
 
-  void _clearChat() {
-    setState(() {
-      _messages = [];
-      _isLoading = false;
-    });
-    _addWelcomeMessage();
+  void _newChat() {
+    widget.chatManager.createNewSession();
   }
 
   @override
   void dispose() {
-    _typingSub?.cancel();
+    widget.chatManager.removeListener(_onSessionsChanged);
+    _orbController.dispose();
+    _pulseController.dispose();
     _chatService.dispose();
-    _systemService.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -128,184 +216,18 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 10, height: 10,
-              decoration: const BoxDecoration(
-                color: AppTheme.accentGold,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Text('Hermes'),
-          ],
-        ),
-        actions: [
-          // Model selector
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.smart_toy_outlined, size: 20),
-            tooltip: 'Model',
-            onSelected: (m) => setState(() => _currentModel = m),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'gemini/gemini-2.5-flash',
-                child: Text('Gemini 2.5 Flash'),
-              ),
-              const PopupMenuItem(
-                value: 'auto/best-free',
-                child: Text('Auto Best Free'),
-              ),
-              const PopupMenuItem(
-                value: 'deepseek/deepseek-v4-flash',
-                child: Text('DeepSeek V4 Flash'),
-              ),
-              ..._availableModels
-                .where((m) => !['gemini/gemini-2.5-flash', 'auto/best-free', 'deepseek/deepseek-v4-flash'].contains(m))
-                .map((m) => PopupMenuItem(value: m, child: Text(_shortModel(m)))),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
-            tooltip: 'Clear chat',
-            onPressed: _clearChat,
-          ),
-        ],
-      ),
-      drawer: _buildDrawer(context),
-      body: Column(
-        children: [
-          // Active model indicator
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Row(
-              children: [
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface2,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _currentModel,
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Messages
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.only(top: 8, bottom: 8),
-              itemCount: _messages.length + (_isLoading ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index >= _messages.length) {
-                  return const TypingIndicator();
-                }
-                return ChatBubble(message: _messages[index]);
-              },
-            ),
-          ),
-
-          // Input
-          MessageInput(
-            onSend: _sendMessage,
-            isLoading: _isLoading,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDrawer(BuildContext context) {
-    return Drawer(
-      child: SafeArea(
+      extendBody: true,
+      appBar: _buildAppBar(),
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppTheme.bgGradient),
         child: Column(
           children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppTheme.accentDeep, AppTheme.surface],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 64, height: 64,
-                    decoration: BoxDecoration(
-                      color: AppTheme.accentDeep,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.accentGold.withAlpha(80), width: 2),
-                    ),
-                    child: const Center(
-                      child: Text('H', style: TextStyle(
-                        color: AppTheme.accentGold,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                      )),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Hermes', style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  )),
-                  const Text('Your personal attendant',
-                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                ],
-              ),
-            ),
-
-            // Navigation
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline, color: AppTheme.accentGold),
-              title: const Text('Chat', style: TextStyle(color: AppTheme.textPrimary)),
-              selected: true,
-              selectedTileColor: AppTheme.surface2,
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.memory_outlined, color: AppTheme.accentPurple),
-              title: const Text('Conversations', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => const ConversationsScreen(),
-                ));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.monitor_heart_outlined, color: AppTheme.accentPurple),
-              title: const Text('System', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => SystemScreen(service: _systemService),
-                ));
-              },
-            ),
-            const Divider(color: AppTheme.surface2),
-            ListTile(
-              leading: const Icon(Icons.info_outline, color: AppTheme.textSecondary),
-              title: const Text('About', style: TextStyle(color: AppTheme.textSecondary)),
-              onTap: () {
-                Navigator.pop(context);
-                _showAbout();
-              },
+            _buildSessionBar(),
+            _buildQuickActions(),
+            Expanded(child: _buildMessageList()),
+            MessageInput(
+              onSend: _sendMessage,
+              isLoading: _isLoading,
             ),
           ],
         ),
@@ -313,25 +235,282 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _showAbout() {
-    showAboutDialog(
-      context: context,
-      applicationName: 'Hermes',
-      applicationVersion: '1.0.0',
-      applicationLegalese: 'Built for Prince. Free stack, zero cost.',
-      children: [
-        const Text(
-          'Hermes is an AI chat client that connects to your local '
-          'OmniRoute gateway, Hindsight memory, and system services.',
-          style: TextStyle(fontSize: 13),
+  Widget _buildSessionBar() {
+    final sessions = widget.chatManager.sessions;
+    if (sessions.length <= 1) return const SizedBox.shrink();
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: sessions.length,
+        itemBuilder: (context, index) {
+          final isActive = index == widget.chatManager.activeIndex;
+          final session = sessions[index];
+          final label = session.title.length > 18
+              ? '${session.title.substring(0, 18)}...'
+              : session.title;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: GestureDetector(
+              onTap: () => widget.chatManager.switchToSession(index),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? AppTheme.accentPurple.withAlpha(40)
+                      : AppTheme.surface2.withAlpha(160),
+                  borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+                  border: Border.all(
+                    color: isActive
+                        ? AppTheme.accentPurple.withAlpha(100)
+                        : AppTheme.surface3.withAlpha(60),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.chat_outlined, size: 12,
+                      color: isActive ? AppTheme.accentPurple : AppTheme.textTertiary),
+                    const SizedBox(width: 6),
+                    Text(label, style: TextStyle(
+                      color: isActive ? AppTheme.textPrimary : AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    )),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: _orbController,
+            builder: (_, __) {
+              return Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AppTheme.agentGradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.glowPurple.withAlpha(
+                        (80 + (_orbController.value * 40)).toInt(),
+                      ),
+                      blurRadius: 12 + _orbController.value * 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Text('H', style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  )),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 10),
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Hermes', style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              )),
+              Row(
+                children: [
+                  Icon(Icons.circle, size: 6, color: AppTheme.accentEmerald),
+                  SizedBox(width: 4),
+                  Text(
+                    'Online',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline, size: 22),
+          tooltip: 'New chat',
+          onPressed: _newChat,
+        ),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.smart_toy_outlined, size: 20),
+          tooltip: 'Model',
+          onSelected: (m) => setState(() => _currentModel = m),
+          itemBuilder: (_) => [
+            const PopupMenuItem(
+              value: 'gemini/gemini-2.5-flash',
+              child: Text('Gemini 2.5 Flash'),
+            ),
+            const PopupMenuItem(
+              value: 'auto/best-free',
+              child: Text('Auto Best Free'),
+            ),
+            const PopupMenuItem(
+              value: 'deepseek/deepseek-v4-flash',
+              child: Text('DeepSeek V4 Flash'),
+            ),
+            ..._availableModels
+              .where((m) => ![
+                'gemini/gemini-2.5-flash',
+                'auto/best-free',
+                'deepseek/deepseek-v4-flash',
+              ].contains(m))
+              .map((m) => PopupMenuItem(value: m, child: Text(_shortModel(m)))),
+          ],
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 20),
+          tooltip: 'Clear chat',
+          onPressed: () {
+            setState(() {
+              _messages = [];
+              _isLoading = false;
+            });
+            _pulseController.stop();
+            _addWelcomeMessage();
+          },
         ),
       ],
     );
   }
 
+  void _addWelcomeMessage() {
+    _messages = [
+      ChatMessage.fromAssistant(
+        'Good evening, Prince. I am **Hermes**, your personal attendant.\n\n'
+        'I have access to your system, your memory, and your AI models. '
+        'Ask me anything — I am at your disposal.',
+        model: 'Hermes v1.0',
+      ),
+    ];
+    _saveSession();
+  }
+
+  Widget _buildQuickActions() {
+    if (_isLoading) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            gradient: AppTheme.thinkingGradient,
+            borderRadius: BorderRadius.circular(AppTheme.pillRadius),
+            border: Border.all(
+              color: AppTheme.accentPurple.withAlpha(60),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: AppTheme.accentPurple,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'Thinking...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _quickActions.map((action) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _QuickChip(
+                icon: action.icon,
+                label: action.label,
+                onTap: () => _sendMessage(action.label),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageList() {
+    return AnimatedList(
+      key: ValueKey('chat-${widget.chatManager.activeIndex}'),
+      controller: _scrollController,
+      initialItemCount: _messages.length + (_isLoading ? 1 : 0),
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      itemBuilder: (context, index, animation) {
+        if (index >= _messages.length) {
+          return SizeTransition(
+            sizeFactor: animation,
+            child: const TypingIndicator(),
+          );
+        }
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: AppTheme.easeOutExpo,
+            )),
+            child: ChatBubble(message: _messages[index]),
+          ),
+        );
+      },
+    );
+  }
+
   String _shortModel(String m) {
     final parts = m.split('/');
-    if (parts.length >= 2) return '${parts[0]}/${parts[1].length > 20 ? '${parts[1].substring(0, 20)}...' : parts[1]}';
-    return m.length > 25 ? '${m.substring(0, 25)}...' : m;
+    if (parts.length >= 2) {
+      final name = parts[1];
+      return '${parts[0]}/${name.length > 18 ? '${name.substring(0, 18)}...' : name}';
+    }
+    return m.length > 22 ? '${m.substring(0, 22)}...' : m;
   }
+}
+
+class _QuickAction {
+  final String label;
+  final IconData icon;
+
+  const _QuickAction(this.label, this.icon);
 }

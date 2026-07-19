@@ -21,12 +21,6 @@ func New(port string, cfg interface {
 	OmniRouteKey() string
 	HindsightURL() string
 }) (*Server, error) {
-	lis, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		return nil, fmt.Errorf("listen :%s: %w", port, err)
-	}
-	lis.Close()
-
 	s := &Server{
 		server: grpc.NewServer(
 			grpc.MaxRecvMsgSize(10 * 1024 * 1024),

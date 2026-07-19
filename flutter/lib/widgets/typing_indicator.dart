@@ -17,7 +17,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     )..repeat();
   }
 
@@ -30,30 +30,38 @@ class _TypingIndicatorState extends State<TypingIndicator>
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 100, 8),
+      padding: const EdgeInsets.fromLTRB(16, 4, 100, 4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: AppTheme.aiBubble,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppTheme.accentPurple.withAlpha(40), width: 1),
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.aiBubble.withAlpha(200),
+              AppTheme.surface2.withAlpha(160),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(AppTheme.bubbleRadius),
+          border: Border.all(
+            color: AppTheme.accentPurple.withAlpha(50),
+            width: 1,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: List.generate(3, (i) {
-            return AnimatedBuilder(
+            return _AnimatedDotBuilder(
               listenable: _controller,
               builder: (_, __) {
                 final delay = i * 0.15;
                 final t = (_controller.value - delay).clamp(0.0, 1.0);
-                final size = 6.0 + 4.0 * (t < 0.5 ? t * 2 : (1 - t) * 2);
+                final size = 6.0 + 5.0 * (t < 0.5 ? t * 2 : (1 - t) * 2);
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 3),
                   child: Container(
                     width: size,
                     height: size,
                     decoration: const BoxDecoration(
-                      color: AppTheme.accentGold,
+                      gradient: AppTheme.agentGradient,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -67,10 +75,10 @@ class _TypingIndicatorState extends State<TypingIndicator>
   }
 }
 
-class AnimatedBuilder extends AnimatedWidget {
+class _AnimatedDotBuilder extends AnimatedWidget {
   final Widget Function(BuildContext context, Widget? child) builder;
 
-  const AnimatedBuilder({
+  const _AnimatedDotBuilder({
     super.key,
     required super.listenable,
     required this.builder,

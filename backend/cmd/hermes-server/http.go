@@ -11,7 +11,7 @@ import (
 	"github.com/prince/hermes-backend/internal/services"
 )
 
-func startHTTPServer(cfg *config.Config) {
+func startHTTPServer(cfg *config.Config) *http.Server {
 	mux := http.NewServeMux()
 
 	sysSvc := services.NewSystemService()
@@ -86,8 +86,12 @@ func startHTTPServer(cfg *config.Config) {
 		WriteTimeout: 60 * time.Second,
 	}
 
-	log.Printf("[http] Hermes HTTP server listening on :9091")
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("[http] server error: %v", err)
-	}
+	go func() {
+		log.Printf("[http] Hermes HTTP server listening on :9091")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[http] server error: %v", err)
+		}
+	}()
+
+	return server
 }

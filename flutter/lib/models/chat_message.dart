@@ -1,4 +1,11 @@
 class ChatMessage {
+  static int _idCounter = 0;
+
+  static String _generateId() {
+    _idCounter++;
+    return '${DateTime.now().millisecondsSinceEpoch}-$_idCounter';
+  }
+
   final String id;
   final String role; // 'user' | 'assistant' | 'system'
   final String content;
@@ -19,13 +26,13 @@ class ChatMessage {
   };
 
   static ChatMessage fromUser(String content) => ChatMessage(
-    id: DateTime.now().microsecondsSinceEpoch.toString(),
+    id: _generateId(),
     role: 'user',
     content: content,
   );
 
   static ChatMessage fromAssistant(String content, {String? model}) => ChatMessage(
-    id: DateTime.now().microsecondsSinceEpoch.toString(),
+    id: _generateId(),
     role: 'assistant',
     content: content,
     modelUsed: model,

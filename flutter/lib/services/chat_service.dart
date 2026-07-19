@@ -3,14 +3,37 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 
-class ChatService {
-  static const String _baseUrl = 'http://127.0.0.1:20128/v1';
-  static const String _apiKey = '5f238e76072d7926';
-  static const String _defaultModel = 'gemini/gemini-2.5-flash';
+/// Configuration for the OmniRoute API.
+///
+/// In production these values should come from environment
+/// variables or a secure configuration source.
+class _ApiConfig {
+  static const String baseUrl = 'http://127.0.0.1:20128/v1';
+  static const String apiKey = '5f238e76072d7926';
+  static const String defaultModel = 'gemini/gemini-2.5-flash';
+}
 
+class ChatService {
   final http.Client _client;
 
   ChatService() : _client = http.Client();
+
+  /// Build the message list from the user input and conversation history.
+  List<Map<String, dynamic>> _buildMessages(
+    String message,
+    List<ChatMessage> history,
+  ) {
+    return [
+      {
+        'role': 'system',
+        'content': 'You are Hermes, a refined AI attendant. '
+            'Respond concisely with elegance and precision. '
+            'Use Markdown for formatting where helpful.',
+      },
+      ...history.map((m) => m.toJson()),
+      {'role': 'user', 'content': message},
+    ];
+  }
 
   /// Send a message and get a complete response.
   Future<ChatMessage> sendMessage({
@@ -18,36 +41,28 @@ class ChatService {
     required List<ChatMessage> history,
     String? model,
   }) async {
-    final messages = [
-      {
-        'role': 'system',
-        'content': 'You are Hermes, a refined AI attendant. '
-            'Respond concisely with elegance and precision. '
-            'Use Markdown for formatting where helpful.'
-      },
-      ...history.map((m) => m.toJson()),
-      {'role': 'user', 'content': message},
-    ];
+    final messages = _buildMessages(message, history);
 
     final body = jsonEncode({
-      'model': model ?? _defaultModel,
+      'model': model ?? _ApiConfig.defaultModel,
       'messages': messages,
       'stream': false,
       'max_tokens': 4096,
     });
 
     final response = await _client.post(
-      Uri.parse('$_baseUrl/chat/completions'),
+      Uri.parse('${_ApiConfig.baseUrl}/chat/completions'),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_apiKey',
+        'Authorization': 'Bearer ${_ApiConfig.apiKey}',
       },
       body: body,
     );
 
     if (response.statusCode != 200) {
-      throw HttpException(
-        'OmniRoute error ${response.statusCode}: ${response.body}',
+      throw Exception(
+        'The AI service returned an error (${response.statusCode}). '
+        'Please try again later.',
       );
     }
 
@@ -56,7 +71,7 @@ class ChatService {
     final choices = data['choices'] as List?;
 
     if (choices == null || choices.isEmpty) {
-      throw const HttpException('No response from model');
+      throw Exception('No response from the AI service. Please try again.');
     }
 
     final reply = choices[0]['message']['content'] as String? ?? '';
@@ -69,28 +84,19 @@ class ChatService {
     required List<ChatMessage> history,
     String? model,
   }) async* {
-    final messages = [
-      {
-        'role': 'system',
-        'content': 'You are Hermes, a refined AI attendant. '
-            'Respond concisely with elegance and precision. '
-            'Use Markdown for formatting where helpful.'
-      },
-      ...history.map((m) => m.toJson()),
-      {'role': 'user', 'content': message},
-    ];
+    final messages = _buildMessages(message, history);
 
     final body = jsonEncode({
-      'model': model ?? _defaultModel,
+      'model': model ?? _ApiConfig.defaultModel,
       'messages': messages,
       'stream': true,
       'max_tokens': 4096,
     });
 
     final request = http.Request('POST',
-      Uri.parse('$_baseUrl/chat/completions'));
+      Uri.parse('${_ApiConfig.baseUrl}/chat/completions'));
     request.headers['Content-Type'] = 'application/json';
-    request.headers['Authorization'] = 'Bearer $_apiKey';
+    request.headers['Authorization'] = 'Bearer ${_ApiConfig.apiKey}';
     request.body = body;
 
     final streamedResponse = await _client.send(request);
@@ -121,14 +127,14 @@ class ChatService {
   Future<List<String>> getAvailableModels() async {
     try {
       final response = await _client.get(
-        Uri.parse('$_baseUrl/models'),
-        headers: {'Authorization': 'Bearer $_apiKey'},
+        Uri.parse('${_ApiConfig.baseUrl}/models'),
+        headers: {'Authorization': 'Bearer ${_ApiConfig.apiKey}'},
       );
-      if (response.statusCode != 200) return [_defaultModel];
+      if (response.statusCode != 200) return [_ApiConfig.defaultModel];
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final models = data['data'] as List?;
-      if (models == null) return [_defaultModel];
+      if (models == null) return [_ApiConfig.defaultModel];
 
       return models
         .map((m) => m['id'] as String)
@@ -136,12 +142,12 @@ class ChatService {
           id.startsWith('gemini/') ||
           id.startsWith('auto/') ||
           id.startsWith('deepseek/') ||
-          id == _defaultModel)
+          id == _ApiConfig.defaultModel)
         .take(20)
         .toList()
       ..sort();
     } catch (_) {
-      return [_defaultModel];
+      return [_ApiConfig.defaultModel];
     }
   }
 

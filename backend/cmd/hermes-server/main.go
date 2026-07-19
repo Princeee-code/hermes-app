@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -11,17 +12,6 @@ import (
 	"github.com/prince/hermes-backend/internal/db"
 )
 
-// serverConfig wraps config.Config to provide the interface grpc.Server expects
-type serverConfig struct {
-	omniRouteURL string
-	omniRouteKey string
-	hindsightURL string
-}
-
-func (c *serverConfig) OmniRouteURL() string { return c.omniRouteURL }
-func (c *serverConfig) OmniRouteKey() string  { return c.omniRouteKey }
-func (c *serverConfig) HindsightURL() string  { return c.hindsightURL }
-
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	log.Println("═══ Hermes Backend Server ═══")
@@ -29,23 +19,17 @@ func main() {
 	cfg := config.Load()
 
 	// Connect to PostgreSQL (non-fatal if unavailable)
-	if err := db.Connect(cfg.PostgresDSN); err != nil {
+	if d, err := db.Connect(cfg.PostgresDSN); err != nil {
 		log.Printf("[main] PostgreSQL not available: %v (continuing)", err)
 	} else {
-		defer db.Close()
+		defer d.Close()
 	}
 
-	// Start HTTP server (goroutine — runs alongside gRPC)
-	go startHTTPServer(cfg)
+	// Start HTTP server (runs in its own goroutine)
+	httpSrv := startHTTPServer(cfg)
 
-	// Build gRPC server
-	grpcCfg := &serverConfig{
-		omniRouteURL: cfg.OmniRouteURL,
-		omniRouteKey: cfg.OmniRouteKey,
-		hindsightURL: cfg.HindsightURL,
-	}
-
-	srv, err := grpc.New(cfg.GRPCPort, grpcCfg)
+	// Build and start gRPC server
+	srv, err := grpc.New(cfg.GRPCPort, cfg)
 	if err != nil {
 		log.Fatalf("[main] Failed to create gRPC server: %v", err)
 	}
@@ -63,5 +47,8 @@ func main() {
 	<-quit
 	log.Println("[main] Shutting down...")
 	srv.Stop()
+	if err := httpSrv.Shutdown(context.Background()); err != nil {
+		log.Printf("[main] HTTP shutdown error: %v", err)
+	}
 	log.Println("[main] Hermes backend stopped")
 }

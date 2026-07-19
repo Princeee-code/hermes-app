@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"strconv"
 )
 
 type Config struct {
@@ -32,11 +31,11 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getEnvInt(key string, fallback int) int {
-	if val := os.Getenv(key); val != "" {
-		if n, err := strconv.Atoi(val); err == nil {
-			return n
-		}
-	}
-	return fallback
-}
+// OmniRouteURL implements the gRPC server config interface.
+func (c *Config) OmniRouteURL() string { return c.OmniRouteURL }
+
+// OmniRouteKey implements the gRPC server config interface.
+func (c *Config) OmniRouteKey() string { return c.OmniRouteKey }
+
+// HindsightURL implements the gRPC server config interface.
+func (c *Config) HindsightURL() string { return c.HindsightURL }
