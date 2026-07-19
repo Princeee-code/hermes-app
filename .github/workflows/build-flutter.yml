@@ -30,11 +30,19 @@ jobs:
       - name: Analyze
         working-directory: flutter
         continue-on-error: true
-        run: flutter analyze 2>&1 | tee analyze.log; echo "ANALYZE_EXIT=${PIPESTATUS[0]}" >> $GITHUB_ENV
+        run: flutter analyze 2>&1 | tee analyze.log
 
       - name: Build APK
         working-directory: flutter
-        run: flutter build apk --debug --split-per-abi 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+        run: |
+          flutter build apk --debug --split-per-abi 2>&1 | tee build.log; EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "## ❌ Build Failed — Error Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            head -80 build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          exit $EXIT_CODE
 
       - name: Upload logs
         if: always()
