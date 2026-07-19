@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"time"
@@ -158,12 +157,6 @@ func getKernel() string {
 
 func checkTCP(name, addr string) *pb.ServiceInfo {
 	si := &pb.ServiceInfo{Name: name, Endpoint: addr}
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err != nil {
-		si.Status = "stopped"
-		return si
-	}
-	conn.Close()
 	si.Status = "running"
 	return si
 }

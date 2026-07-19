@@ -61,7 +61,7 @@ class _SystemScreenState extends State<SystemScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Make sure the Hermes backend is running\non port 9091.',
+            'Make sure the Hermes backend is running\non port 9090.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
           ),
