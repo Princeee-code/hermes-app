@@ -42,7 +42,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
           mainAxisSize: MainAxisSize.min,
           children: List.generate(3, (i) {
             return AnimatedBuilder(
-              animation: _controller,
+              listenable: _controller,
               builder: (_, __) {
                 final delay = i * 0.15;
                 final t = (_controller.value - delay).clamp(0.0, 1.0);
