@@ -9,10 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: flutter
-
     steps:
       - uses: actions/checkout@v4
 
@@ -20,10 +16,21 @@ jobs:
         with:
           channel: stable
 
+      - name: Generate fresh Android project
+        run: |
+          # Create temp flutter project to get correct Android template
+          cd /tmp
+          flutter create --project-name hermes_app --org com.hermes temp_hermes 2>&1
+          # Replace our android/ with the fresh one
+          rm -rf "$GITHUB_WORKSPACE/flutter/android"
+          cp -r /tmp/temp_hermes/android "$GITHUB_WORKSPACE/flutter/android"
+
       - name: Install deps
+        working-directory: flutter
         run: flutter pub get
 
-      - name: Build APK
+      - name: Build APK  
+        working-directory: flutter
         run: flutter build apk --debug --split-per-abi
 
       - uses: actions/upload-artifact@v4
