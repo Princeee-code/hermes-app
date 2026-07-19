@@ -125,7 +125,7 @@ class _SystemScreenState extends State<SystemScreen> {
                 child: _MetricTile(
                   label: 'RAM',
                   value: '${i.freeRamGb.toStringAsFixed(1)}GB',
-                  icon: Icons.chip,
+                  icon: Icons.memory,
                   color: AppTheme.accentPurple,
                 ),
               ),
@@ -163,7 +163,7 @@ class _SystemScreenState extends State<SystemScreen> {
           // Memory section
           _GlassSection(
             title: 'Memory',
-            icon: Icons.chip,
+            icon: Icons.memory,
             children: [
               _infoRow(
                 'RAM',

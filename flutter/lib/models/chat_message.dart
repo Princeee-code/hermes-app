@@ -41,7 +41,7 @@ class ChatMessage {
 
 class Conversation {
   final String id;
-  final String title;
+  String title;
   final List<ChatMessage> messages;
   final DateTime createdAt;
   final DateTime updatedAt;

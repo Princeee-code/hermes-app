@@ -16,7 +16,7 @@ class ChatManager extends ChangeNotifier {
   Conversation get activeSession => _sessions[_activeIndex];
 
   ChatManager() {
-    _createNewSession();
+    createNewSession();
   }
 
   void createNewSession() {
