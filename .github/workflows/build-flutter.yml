@@ -3,9 +3,6 @@ name: Build Hermes Flutter APK
 on:
   push:
     branches: [main]
-    paths:
-      - 'flutter/**'
-      - '!flutter/**.md'
   workflow_dispatch:
 
 jobs:
