@@ -42,6 +42,18 @@ func (s *SystemService) GetServices(ctx context.Context, req *pb.ServicesRequest
 	return &pb.ServicesResponse{Services: services}, nil
 }
 
+func checkTCP(name, addr string) *pb.ServiceInfo {
+	si := &pb.ServiceInfo{Name: name, Endpoint: addr}
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		si.Status = "stopped"
+		return si
+	}
+	conn.Close()
+	si.Status = "running"
+	return si
+}
+
 func getCPUInfo() *pb.CpuInfo {
 	info := &pb.CpuInfo{}
 
@@ -178,18 +190,6 @@ func getKernel() string {
 	return strings.TrimSpace(string(data))
 }
 
-func checkTCP(name, addr string) *pb.ServiceInfo {
-	si := &pb.ServiceInfo{Name: name, Endpoint: addr}
-	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
-	if err != nil {
-		log.Printf("[services] checkTCP(%s): dial %s: %v", name, addr, err)
-		si.Status = "stopped"
-		return si
-	}
-	conn.Close()
-	si.Status = "running"
-	return si
-}
 
 func checkProc(name, procName string) *pb.ServiceInfo {
 	si := &pb.ServiceInfo{Name: name}
