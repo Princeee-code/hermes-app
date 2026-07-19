@@ -3,6 +3,7 @@ name: Build Hermes Flutter APK
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -65,3 +66,25 @@ jobs:
         with:
           name: hermes-x86_64
           path: flutter/build/app/outputs/flutter-apk/app-x86_64-debug.apk
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Hermes v${{ github.ref_name }}
+          body: |
+            ## Hermes AI Chat App
+            
+            AI chat client connecting to your local OmniRoute gateway, Hindsight memory, and system services.
+            
+            ### What's new
+            - First release of the Hermes Flutter chat app
+            - Dark amethyst/gold theme
+            - Chat with Hermes AI assistant via local OmniRoute
+            - System status dashboard
+            - Conversations (coming soon)
+          files: |
+            flutter/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+            flutter/build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk
+            flutter/build/app/outputs/flutter-apk/app-x86_64-debug.apk
+          generate_release_notes: true
