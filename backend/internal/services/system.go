@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -38,6 +39,18 @@ func (s *SystemService) GetServices(ctx context.Context, req *pb.ServicesRequest
 		checkProc("Roblox Keeper", "roblox-keeper"),
 	}
 	return &pb.ServicesResponse{Services: services}, nil
+}
+
+func checkTCP(name, addr string) *pb.ServiceInfo {
+	si := &pb.ServiceInfo{Name: name, Endpoint: addr}
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		si.Status = "stopped"
+		return si
+	}
+	conn.Close()
+	si.Status = "running"
+	return si
 }
 
 func getCPUInfo() *pb.CpuInfo {
@@ -153,12 +166,6 @@ func getKernel() string {
 		return "Linux (aarch64)"
 	}
 	return strings.TrimSpace(string(data))
-}
-
-func checkTCP(name, addr string) *pb.ServiceInfo {
-	si := &pb.ServiceInfo{Name: name, Endpoint: addr}
-	si.Status = "running"
-	return si
 }
 
 func checkProc(name, procName string) *pb.ServiceInfo {
