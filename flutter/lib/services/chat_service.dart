@@ -1,17 +1,39 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 
 class ChatService {
-  static const String _baseUrl = 'http://127.0.0.1:20128/v1';
-  // API key is for localhost-only OmniRoute — not a secret on this device.
-  // For production, inject via environment or secure config.
-  static const String _apiKey = '5f238e76072d7926';
-  static const String _defaultModel = 'gemini/gemini-2.5-flash';
+  static String _baseUrl = 'http://127.0.0.1:20128/v1';
+  static String _apiKey = '5f238e76072d7926';
+  static String _defaultModel = 'gemini/gemini-2.5-flash';
 
   final http.Client _client;
 
-  ChatService() : _client = http.Client();
+  ChatService() : _client = http.Client() {
+    _loadConfig();
+  }
+
+  void _loadConfig() {
+    // In debug/profile, API key is compiled in.
+    // For release builds where it matters, read from env or a config file.
+    // Currently the OmniRoute gateway doesn't require auth at localhost,
+    // so _apiKey isn't critical for local use.
+    try {
+      if (!kIsWeb && Platform.environment.containsKey('OMNIROUTE_API_KEY')) {
+        _apiKey = Platform.environment['OMNIROUTE_API_KEY']!;
+      }
+      if (!kIsWeb && Platform.environment.containsKey('OMNIROUTE_URL')) {
+        _baseUrl = Platform.environment['OMNIROUTE_URL']!;
+      }
+      if (!kIsWeb && Platform.environment.containsKey('HERMES_DEFAULT_MODEL')) {
+        _defaultModel = Platform.environment['HERMES_DEFAULT_MODEL']!;
+      }
+    } catch (_) {
+      // Non-web platforms without Platform support use defaults
+    }
+  }
 
   /// Send a message and get a complete response.
   Future<ChatMessage> sendMessage({
